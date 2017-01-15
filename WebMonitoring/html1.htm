@@ -1,0 +1,51 @@
+<html>
+<head>
+    <title>Monitoring app</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+
+    <style>
+        .container {
+          display: -webkit-box;
+          display: -moz-box;
+          display: -ms-flexbox;
+          display: -webkit-flex;
+          display: flex; 
+          
+          justify-content: flex-start;
+          align-items: flex-start;
+          align-content: flex-start;
+          flex-flow: row wrap;
+          -webkit-flex-flow: row wrap;
+          justify-content: space-around;
+
+        }
+        .item {
+            min-width: 30px;
+            min-height: 30px;
+            margin: 5px 5px;
+            background-color: blue;
+            flex: 0 1 auto;
+            align-self: center;
+
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+    </div>
+    <script>
+            function getUptime() {
+                $.get("uptime", function (data) {
+
+                },"text");
+            }
+
+
+            var containerDiv = $(".container");
+            for (var i = 0; i < 100; i++) {
+                containerDiv.append($('<div></div>').addClass('item').html(i+' sdf<br> sdf sdf<br> asdasd '));
+            }
+
+    </script>
+</body>
+</html>

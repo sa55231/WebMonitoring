@@ -16,36 +16,116 @@
           align-content: flex-start;
           flex-flow: row wrap;
           -webkit-flex-flow: row wrap;
-          justify-content: space-around;
+          justify-content:flex-start;
 
         }
         .item {
             min-width: 30px;
             min-height: 30px;
             margin: 5px 5px;
-            background-color: blue;
+            background-color: white;
+            border: 2px solid black;
             flex: 0 1 auto;
             align-self: center;
 
+        }
+        .clsuccess {
+            background-color:forestgreen;
+        }
+        .clfail {
+            background-color:red;
+        }
+        @keyframes success {
+            0% {
+                background-color:whitesmoke;
+            }
+            100% {
+                background-color:forestgreen;
+            }
+            
+        }
+        @keyframes fail {
+            0% {
+                background-color:whitesmoke;
+            }
+            100% {
+                background-color:red;
+            }            
+        }
+       @-webkit-keyframes success {
+            0% {
+                background-color:whitesmoke;
+            }
+            100% {
+                background-color:forestgreen;
+            }
+            
+        }
+        @-webkit-keyframes fail {
+            0% {
+                background-color:whitesmoke;
+            }
+            100% {
+                background-color:red;
+            }            
+        }
+        .highlight-success {
+           -webkit-animation: success 2s ease-in 1;
+           animation: success 2s ease-in 1;
+        }
+        .highlight-fail {
+           -webkit-animation: fail 2s ease-in 1;
+           animation: fail 2s ease-in 1;
+        }
+
+        .small {
+            font-size:x-small;
         }
     </style>
 </head>
 <body>
     <div class="container">
     </div>
-    <script>
-            function getUptime() {
-                $.get("uptime", function (data) {
+    <script type="text/javascript">
+        var allSites = [];
+            function getSites() {
+                $.get("/sites", function (data) {
+                    var containerDiv = $(".container");
+                    allSites = data;
+                    for (var i = 0; i < data.length; i++) {
+                        var div = $('<div></div>').addClass('item').html(allSites[i].name);
+                        div.attr('id', allSites[i].id);
+                        containerDiv.append(div);
+                    }
 
-                },"text");
+                    var ws = new WebSocket("ws://" + window.location.host + "/ws");
+                    ws.onmessage = function (event) {
+                        var msg = JSON.parse(event.data);
+                        var updatedDiv = $("#" + msg.site_id);
+                        updatedDiv.attr('class', 'item');
+                        updatedDiv.html('<h5>' + msg.name + '</h5><div class="small">Response:'+msg.duration+' ms</div><div class="small">Status:'+msg.status+'</div>');
+                        if (msg.status >= 200 && msg.status < 400)
+                        {                            
+                            updatedDiv.attr('class', 'item clsuccess highlight-success ');
+                            setTimeout(function () {
+                                updatedDiv.removeClass("highlight-success");
+                            }, 2000);
+                        }
+                        else
+                        {
+                            updatedDiv.attr('class', 'item clfail highlight-fail');
+                            setTimeout(function () {
+                                updatedDiv.removeClass("highlight-fail");
+                            }, 2000);
+                        }
+                        console.log(JSON.stringify(msg));
+                    };
+
+                });
             }
 
 
-            var containerDiv = $(".container");
-            for (var i = 0; i < 100; i++) {
-                containerDiv.append($('<div></div>').addClass('item').html(i+' sdf<br> sdf sdf<br> asdasd '));
-            }
-
+            getSites();
     </script>
 </body>
 </html>

@@ -27,3 +27,15 @@ To manage URLs, simply use the provided HTTP API with your favourite http client
 A small gif with how it looks like when monitoring a bunch of websites:
 
 ![alt tag](docs/webmonitoring.gif)
+
+#### To Build
+
+  - Build boost (http://www.boost.org/) on your system or download prebuilt binaries
+  - git clone https://github.com/sa55231/WebMonitoring.git
+  - cd WebMonitoring
+  - Open WebMonitoring.sln with VS2015 (Community Edition is fine)
+  - May need to adjust include directories and library directories to point to your boost installation
+  - Compile.
+ 
+
+ 

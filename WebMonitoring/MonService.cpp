@@ -37,6 +37,8 @@ CMonService::CMonService(PWSTR pszServiceName,
             auto fullMsg = L"Using database: " + path;
             WriteEventLogEntry(fullMsg.c_str(), EVENTLOG_INFORMATION_TYPE);
             sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS URLS(ID INTEGER PRIMARY KEY AUTOINCREMENT,NAME TEXT,URL TEXT)",NULL,NULL,NULL);
+            sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS HISTORY(ID INTEGER PRIMARY KEY AUTOINCREMENT,NAME TEXT,URL TEXT,SITE_ID INTEGER,DURATION INTEGER,STATUS INT,REQUEST_TIME INTEGER)", NULL, NULL, NULL);
+            sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS HISTORY_TIME_IDX ON HISTORY(REQUEST_TIME)", NULL, NULL, NULL);
         }
         //szPath;
     }
@@ -68,11 +70,14 @@ void CMonService::OnStop()
 {
     WriteEventLogEntry(L"CMonService in OnStop",
         EVENTLOG_INFORMATION_TYPE);
-    cts.cancel();
+    for(const auto& pr : cancellations_source_tasks) 
+    {
+        pr.second.cancel();
+    }
     task_timeout_condition.notify_all();
     app.stop();
-    thr.join();
-    auto joinTask = concurrency::when_all(begin(tasks),end(tasks));
+    thr.join();    
+    auto joinTask = concurrency::when_all(begin(tasks), end(tasks));
     joinTask.wait();
 }
 
@@ -95,15 +100,18 @@ std::vector<site> CMonService::GetAllSites() const
 
 site CMonService::AddSite(const std::string & name, const std::string & url) const
 {
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, "insert into URLS (NAME, URL) values (?1, ?2);", -1, &stmt, NULL);       
-
-    sqlite3_bind_text(stmt, 1, name.c_str(), name.length(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, url.c_str(), url.length(), SQLITE_TRANSIENT);
     site s;
     s.name = name;
     s.url = url;
     s.id = -1;
+    if (url.find("http://") != 0 && url.find("https://") != 0)
+    {
+        s.url = "http://" + url;
+    }
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "insert into URLS (NAME, URL) values (?1, ?2);", -1, &stmt, NULL);       
+    sqlite3_bind_text(stmt, 1, name.c_str(), name.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, s.url.c_str(), s.url.length(), SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) 
     {
@@ -192,19 +200,21 @@ void CMonService::ScheduleSites()
 
 void CMonService::ScheduleSite(const site & s)
 {
+    concurrency::cancellation_token_source cts;    
     auto token = cts.get_token();
     auto task = concurrency::create_task([this, s]() {
-
+        auto token = cancellations_source_tasks[s.id].get_token();
         auto sleep_duration = chrono::seconds(60);
         cout << "Checking " << s.name << " at url: " << s.url << endl;
         WinHttpClient client(ConvertToWString(s.url.c_str()));
         client.SetUserAgent(L"Web Monitoring Service/0.1");
         client.SetRequireValidSslCertificates(false);
-
-        while (!cts.get_token().is_canceled())
+        
+        while (!token.is_canceled())
         {
             auto start = std::chrono::system_clock::now();
             picojson::object resp;
+            response_data resp_data;            
             if (client.SendHttpRequest(L"GET", false))
             {
                 auto status = client.GetResponseStatusCode();
@@ -214,13 +224,21 @@ void CMonService::ScheduleSite(const site & s)
                 resp["status"] = picojson::value((int64_t)std::stoi(status));
                 resp["duration"] = picojson::value(md.count());
                 wcout << status << endl;
+                resp_data.duration = md.count();
+                resp_data.status = std::stoi(status);
             }
             else
             {
                 resp["status"] = picojson::value((int64_t)500);
+                resp_data.status = 500;
             }
             resp["site_id"] = picojson::value((int64_t)s.id);
             resp["name"] = picojson::value(s.name);
+            resp["url"] = picojson::value(s.url);
+            resp_data.site_id = s.id;
+            resp_data.name = s.name;
+            resp_data.url = s.url;
+            AddHistoricalData(resp_data);
             {
                 std::lock_guard<std::mutex> _(mtx);
                 for (auto& con : connections)
@@ -234,9 +252,56 @@ void CMonService::ScheduleSite(const site & s)
             //std::this_thread::sleep_for(sleep_duration);
         }
 
+        cout << "Exiting for " << s.name << " at url: " << s.url << endl;
+
     }, token);
-    
-    tasks.emplace_back(task);
+    cancellations_source_tasks.insert(std::make_pair(s.id, cts));
+    tasks.push_back(std::move(task));
+}
+
+void CMonService::AddHistoricalData(const response_data & resp)
+{    
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "insert into HISTORY (NAME, URL,SITE_ID,DURATION,STATUS,REQUEST_TIME) values (?1, ?2,?3,?4,?5,strftime('%s','now'));", -1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, resp.name.c_str(), resp.name.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, resp.url.c_str(), resp.url.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, resp.site_id);
+    sqlite3_bind_int64(stmt, 4, resp.duration);
+    sqlite3_bind_int(stmt, 5, resp.status);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE)
+    {
+        printf("ERROR inserting data: %s\n", sqlite3_errmsg(db));
+    }
+    sqlite3_finalize(stmt);    
+}
+
+response_data CMonService::GetLatestHistoricalData(int site_id)
+{
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "SELECT NAME,URL,DURATION,STATUS FROM HISTORY WHERE SITE_ID=?1 ORDER BY REQUEST_TIME DESC", -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, site_id);
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        response_data s;        
+        s.name = (const char*)sqlite3_column_text(stmt, 0);
+        s.url = (const char*)sqlite3_column_text(stmt, 1);
+        s.duration = sqlite3_column_int64(stmt, 2);
+        s.status = sqlite3_column_int(stmt, 3);
+        sqlite3_finalize(stmt);
+        return s;
+    }
+    sqlite3_finalize(stmt);
+    return response_data();
+}
+
+void CMonService::DeleteOldHistoricalData(int site_id)
+{
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "DELETE FROM HISTORY WHERE SITE_ID=?1 AND REQUEST_TIME<strftime('now', '-14 days')", -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, site_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
 }
 
 void CMonService::ServiceWorkerThread(void)
@@ -250,6 +315,20 @@ void CMonService::ServiceWorkerThread(void)
         CROW_LOG_INFO << "new websocket connection";
         std::lock_guard<std::mutex> _(mtx);
         connections.insert(&conn);
+
+        auto sites = GetAllSites();
+        for (const auto& s : sites)
+        {
+            auto resp_data = GetLatestHistoricalData(s.id);
+            picojson::object resp;
+            resp["status"] = picojson::value((int64_t)resp_data.status);
+            resp["duration"] = picojson::value(resp_data.duration);
+            resp["site_id"] = picojson::value((int64_t)s.id);
+            resp["name"] = picojson::value(s.name);
+            resp["url"] = picojson::value(s.url);
+            conn.send_text(picojson::value(resp).serialize());
+        }
+
     }).onclose([&](crow::websocket::connection& conn, const std::string& reason) {
         CROW_LOG_INFO << "websocket connection closed: " << reason;
         std::lock_guard<std::mutex> _(mtx);
@@ -259,7 +338,11 @@ void CMonService::ServiceWorkerThread(void)
     CROW_ROUTE(app, "/")
         .methods("GET"_method)
         ([this]() {
-        return indexHtmlString;
+        crow::response resp;
+        resp.code = 200;
+        resp.set_header("Content-Type", "text/html;charset=utf8");
+        resp.body = indexHtmlString;
+        return resp;
     });
     CROW_ROUTE(app, "/sites")
         .methods("GET"_method, "POST"_method)
@@ -326,6 +409,8 @@ void CMonService::ServiceWorkerThread(void)
                     s.id = id;
                     s.name = val.get("name").to_str();
                     s.url = val.get("url").to_str();
+                    cancellations_source_tasks[id].cancel();
+                    
                     ScheduleSite(s);
                 }
                 else
@@ -342,6 +427,7 @@ void CMonService::ServiceWorkerThread(void)
         else if (req.method == crow::HTTPMethod::Delete)
         {
             DeleteSite(id);
+            cancellations_source_tasks[id].cancel();
             resp.code = 200;
         }        
         else if (req.method == crow::HTTPMethod::Get)

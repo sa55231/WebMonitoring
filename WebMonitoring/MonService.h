@@ -7,6 +7,8 @@
 #include <mutex>
 #include <unordered_set>
 #include <condition_variable>
+#include <concurrent_unordered_map.h>
+#include <concurrent_vector.h>
 #include <ppl.h>
 #include "sqlite3.h"
 
@@ -15,7 +17,13 @@ struct site {
     std::string name;
     std::string url;
 };
-
+struct response_data {    
+    std::string name;
+    std::string url;
+    int64_t duration = -1;
+    int status;    
+    int site_id;
+};
 class CMonService : public CServiceBase
 {
 public:
@@ -37,12 +45,15 @@ private:
     site GetSite(int id) const;
     void ScheduleSites();
     void ScheduleSite(const site& s);
+    void AddHistoricalData(const response_data& resp);
+    response_data GetLatestHistoricalData(int site_id);
+    void DeleteOldHistoricalData(int site_id);
 private:
     sqlite3 *db;    
     std::mutex mtx;
-    std::unordered_set<crow::websocket::connection*> connections;
-    concurrency::cancellation_token_source cts;
-    std::vector<concurrency::task<void>> tasks;
+    std::unordered_set<crow::websocket::connection*> connections;        
+    concurrency::concurrent_unordered_map<int,concurrency::cancellation_token_source> cancellations_source_tasks;
+    concurrency::concurrent_vector<concurrency::task<void>> tasks;
     std::mutex task_timeout_mutex;
     std::condition_variable task_timeout_condition;
     crow::SimpleApp app;

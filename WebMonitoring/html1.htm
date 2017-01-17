@@ -1,5 +1,10 @@
+<!DOCTYPE html>
+
 <html>
-<head>
+<head lang="en-us">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Monitoring app</title>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
 
@@ -103,7 +108,7 @@
                         var msg = JSON.parse(event.data);
                         var updatedDiv = $("#" + msg.site_id);
                         updatedDiv.attr('class', 'item');
-                        updatedDiv.html('<h5>' + msg.name + '</h5><div class="small">Response:'+msg.duration+' ms</div><div class="small">Status:'+msg.status+'</div>');
+                        updatedDiv.html('<h5>' + msg.name + '</h5><div class="small"><a target="_blank" href="' + msg.url + '">' + msg.url + '</a></div><div class="small">Response:' + msg.duration + ' ms</div><div class="small">Status:' + msg.status + '</div>');
                         if (msg.status >= 200 && msg.status < 400)
                         {                            
                             updatedDiv.attr('class', 'item clsuccess highlight-success ');

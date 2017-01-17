@@ -22,15 +22,17 @@
           flex-flow: row wrap;
           -webkit-flex-flow: row wrap;
           justify-content:flex-start;
+          flex-basis: auto;
 
         }
         .item {
             min-width: 30px;
             min-height: 30px;
             margin: 5px 5px;
+            padding: 0px;
             background-color: white;
             border: 2px solid black;
-            flex: 0 1 auto;
+            flex: 0 0 auto;
             align-self: center;
 
         }
@@ -85,6 +87,10 @@
 
         .small {
             font-size:x-small;
+        }
+        .item > h5 {
+            margin-top: 5px;
+            margin-bottom: 5px;
         }
     </style>
 </head>

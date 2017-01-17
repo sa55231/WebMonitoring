@@ -24,3 +24,6 @@ To manage URLs, simply use the provided HTTP API with your favourite http client
     -  The body of the PUT request is a json of the form: {"name": "somename","url":"http://example.com"}
 
 
+A small gif with how it looks like when monitoring a bunch of websites:
+
+![alt tag](docs/webmonitoring.gif)

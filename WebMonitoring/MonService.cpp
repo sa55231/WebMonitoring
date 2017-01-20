@@ -230,6 +230,21 @@ void CMonService::ScheduleSite(const site & s)
                 wcout << status << endl;
                 resp_data.duration = md.count();
                 resp_data.status = std::stoi(status);
+                if (resp_data.status >= 400)
+                {
+                    //we are going to speed up the requests, up to a minimum of 10 seconds interval
+                    auto new_count = sleep_duration.count() / 2;
+                    if (new_count <= 10)
+                    {
+                        new_count = 10;
+                    }
+                    sleep_duration = chrono::seconds(new_count);
+                }
+                else
+                {
+                    //reset to 60 seconds
+                    sleep_duration = chrono::seconds(60);
+                }
             }
             else
             {                

@@ -2,7 +2,7 @@
 
 #include <windows.h> 
 
-void InstallService(PWSTR pszServiceName,
+bool InstallService(PWSTR pszServiceName,
     PWSTR pszDisplayName,
     DWORD dwStartType,
     PWSTR pszDependencies,

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 
 <html>
 <head lang="en-us">
@@ -114,7 +114,13 @@
                         var msg = JSON.parse(event.data);
                         var updatedDiv = $("#" + msg.site_id);
                         updatedDiv.attr('class', 'item');
-                        updatedDiv.html('<h5>' + msg.name + '</h5><div class="small"><a target="_blank" href="' + msg.url + '">' + msg.url + '</a></div><div class="small">Response:' + msg.duration + ' ms</div><div class="small">Status:' + msg.status + '</div>');
+                        if (msg.duration == null) msg.duration = -1;
+                        var html = '<h5>' + msg.name + '</h5><div class="small"><a target="_blank" href="' + msg.url + '">' + msg.url + '</a></div><div class="small">Response:' + msg.duration + ' ms</div><div class="small">Status:' + msg.status + '</div>';
+                        if (msg.error != null)
+                        {
+                            html += '<div class="small">Error:' + msg.error + '</div>';
+                        }
+                        updatedDiv.html(html);
                         if (msg.status >= 200 && msg.status < 400)
                         {                            
                             updatedDiv.attr('class', 'item clsuccess highlight-success ');

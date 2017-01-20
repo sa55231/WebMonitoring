@@ -11,3 +11,5 @@ std::wstring ConvertToWString(const char* str);
 std::string GetHtmlResource(int id);
 std::string createDurationString(std::chrono::milliseconds time);
 std::wstring GetLastErrorMessage(DWORD* eNum);
+std::wstring GetErrorMessage(DWORD eNum);
+void SetFilePermission(LPCTSTR FileName);

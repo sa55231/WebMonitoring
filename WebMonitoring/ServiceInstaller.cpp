@@ -4,7 +4,7 @@
 #include <stdio.h> 
 
 
-void InstallService(PWSTR pszServiceName,
+bool InstallService(PWSTR pszServiceName,
     PWSTR pszDisplayName,
     DWORD dwStartType,
     PWSTR pszDependencies,
@@ -14,7 +14,7 @@ void InstallService(PWSTR pszServiceName,
     wchar_t szPath[MAX_PATH];
     SC_HANDLE schSCManager = NULL;
     SC_HANDLE schService = NULL;
-
+    bool success = false;
     if (GetModuleFileName(NULL, szPath, ARRAYSIZE(szPath)) == 0)
     {
         wprintf(L"GetModuleFileName failed w/err 0x%08lx\n", GetLastError());
@@ -54,7 +54,7 @@ void InstallService(PWSTR pszServiceName,
     }
 
     wprintf(L"%s is installed.\n", pszServiceName);
-
+    success = true;
 Cleanup:
     // Centralized cleanup for all allocated resources. 
     if (schSCManager)
@@ -67,6 +67,7 @@ Cleanup:
         CloseServiceHandle(schService);
         schService = NULL;
     }
+    return success;
 }
 
 

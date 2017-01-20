@@ -28,7 +28,7 @@ int wmain(int argc, wchar_t *argv[])
         {
             // Install the service when the command is  
             // "-install" or "/install". 
-            InstallService(
+            bool installed = InstallService(
                 SERVICE_NAME,               // Name of service 
                 SERVICE_DISPLAY_NAME,       // Name to display 
                 SERVICE_START_TYPE,         // Service start type 
@@ -36,6 +36,10 @@ int wmain(int argc, wchar_t *argv[])
                 SERVICE_ACCOUNT,            // Service running account 
                 SERVICE_PASSWORD            // Password of the account 
             );
+            if (installed)
+            {
+
+            }
         }
         else if (_wcsicmp(L"remove", argv[1] + 1) == 0)
         {
@@ -44,7 +48,14 @@ int wmain(int argc, wchar_t *argv[])
             UninstallService(SERVICE_NAME);
         }
         else if (_wcsicmp(L"run", argv[1] + 1) == 0)
+        {            
+            CMonService service(SERVICE_NAME);
+            service.ServiceWorkerThread();
+        }
+        else if (_wcsicmp(L"debug", argv[1] + 1) == 0)
         {
+            wprintf(L"Hit ENTER to start the service\n");
+            char c = getc(stdin);
             CMonService service(SERVICE_NAME);
             service.ServiceWorkerThread();
         }
@@ -54,7 +65,8 @@ int wmain(int argc, wchar_t *argv[])
         wprintf(L"Parameters:\n");
         wprintf(L" -install  to install the service.\n");
         wprintf(L" -remove   to remove the service.\n");
-
+        wprintf(L" -run      to run in the console.\n");
+        wprintf(L" -debug    to run in the console but wait to start until told to (to be able to Attach to Process).\n");
 
         CMonService service(SERVICE_NAME);
         if (!CServiceBase::Run(service))

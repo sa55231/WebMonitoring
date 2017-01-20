@@ -14,14 +14,19 @@ CMonService::CMonService(PWSTR pszServiceName,
     BOOL fCanStop, BOOL fCanShutdown, BOOL fCanPauseContinue) : CServiceBase(pszServiceName, fCanStop, fCanShutdown, fCanPauseContinue),db(nullptr)
 {
     m_fStopping = FALSE;
-    indexHtmlString = GetHtmlResource(IDR_HTML1);
+    indexHtmlString = GetHtmlResource(IDR_HTML1);    
+}
+
+
+void CMonService::OpenDatabase()
+{
     TCHAR szPath[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA,NULL, 0, szPath)))
+    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA, NULL, 0, szPath)))
     {
         // Set lpstrInitialDir to the path that SHGetFolderPath obtains.         
         std::wstring path(szPath);
         path.append(L"\\webmon");
-        CreateDirectory(path.c_str(),NULL);
+        CreateDirectory(path.c_str(), NULL);
         path.append(L"\\webmon.db");
         if (sqlite3_open(ConvertToString(path.c_str()).c_str(), &db))
         {
@@ -29,21 +34,20 @@ CMonService::CMonService(PWSTR pszServiceName,
             sqlite3_close(db);
             auto wmsg = ConvertToWString(err);
             auto fullMsg = L"Cannot open database: " + wmsg;
-            WriteEventLogEntry(fullMsg.c_str(),EVENTLOG_ERROR_TYPE);
+            WriteEventLogEntry(fullMsg.c_str(), EVENTLOG_ERROR_TYPE);
             throw fullMsg;
         }
         else
         {
             auto fullMsg = L"Using database: " + path;
             WriteEventLogEntry(fullMsg.c_str(), EVENTLOG_INFORMATION_TYPE);
-            sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS URLS(ID INTEGER PRIMARY KEY AUTOINCREMENT,NAME TEXT,URL TEXT)",NULL,NULL,NULL);
+            sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS URLS(ID INTEGER PRIMARY KEY AUTOINCREMENT,NAME TEXT,URL TEXT)", NULL, NULL, NULL);
             sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS HISTORY(ID INTEGER PRIMARY KEY AUTOINCREMENT,NAME TEXT,URL TEXT,SITE_ID INTEGER,DURATION INTEGER,STATUS INT,REQUEST_TIME INTEGER)", NULL, NULL, NULL);
             sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS HISTORY_TIME_IDX ON HISTORY(REQUEST_TIME)", NULL, NULL, NULL);
         }
-        //szPath;
+        SetFilePermission(path.c_str());
     }
 }
-
 
 CMonService::~CMonService()
 {
@@ -228,7 +232,14 @@ void CMonService::ScheduleSite(const site & s)
                 resp_data.status = std::stoi(status);
             }
             else
-            {
+            {                
+                DWORD error = client.GetLastError();
+                std::wstring errorMsg = GetErrorMessage(error);
+                if (errorMsg.length() <= 0) {
+                    errorMsg = L"WinHTTP:" + std::to_wstring(error);
+                }
+                resp["error"] = picojson::value(ConvertToString(errorMsg.c_str()));
+                resp["duration"] = picojson::value((int64_t)-1);
                 resp["status"] = picojson::value((int64_t)500);
                 resp_data.status = 500;
             }
@@ -308,7 +319,7 @@ void CMonService::ServiceWorkerThread(void)
 {
     // Log a service stop message to the Application log. 
     WriteEventLogEntry(L"CMonService1 in ServiceWorkerThread",EVENTLOG_INFORMATION_TYPE);
-
+    OpenDatabase();
     CROW_ROUTE(app, "/ws")
         .websocket()
         .onopen([&](crow::websocket::connection& conn) {

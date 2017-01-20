@@ -15,6 +15,8 @@
 #pragma warning(disable: 4127)
 #include <atlcomtime.h>
 #pragma warning(pop)
+#include <Wincrypt.h>
+
 using namespace std;
 
 inline wstring Trim(const wstring &source, const wstring &targets)
@@ -443,7 +445,7 @@ inline wstring GetTimeString(const COleDateTime &time, const wstring &separator 
 
     return date;
 }
-/*
+
 inline wstring MD5(const wstring &text)
 {
     if (text.size() <= 0)
@@ -479,7 +481,7 @@ inline wstring MD5(const wstring &text)
     }
 
     return encrypted;
-}*/
+}
 
 inline wstring FilterFileName(const wstring &name)
 {

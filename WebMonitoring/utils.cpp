@@ -3,15 +3,71 @@
 #include <sstream>
 #include <tuple>
 #include <iomanip>
+#include <Accctrl.h>
+#include <Aclapi.h>
+
+void SetFilePermission(LPCTSTR FileName)
+{
+    PSID pEveryoneSID = NULL;
+    PACL pACL = NULL;
+    EXPLICIT_ACCESS ea[1];
+    SID_IDENTIFIER_AUTHORITY SIDAuthWorld = SECURITY_WORLD_SID_AUTHORITY;
+
+    // Create a well-known SID for the Everyone group.
+    AllocateAndInitializeSid(&SIDAuthWorld, 1,
+        SECURITY_WORLD_RID,
+        0, 0, 0, 0, 0, 0, 0,
+        &pEveryoneSID);
+
+    // Initialize an EXPLICIT_ACCESS structure for an ACE.
+    // The ACE will allow Everyone read access to the key.
+    ZeroMemory(&ea, 1 * sizeof(EXPLICIT_ACCESS));
+    ea[0].grfAccessPermissions = 0xFFFFFFFF;
+    ea[0].grfAccessMode = GRANT_ACCESS;
+    ea[0].grfInheritance = NO_INHERITANCE;
+    ea[0].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[0].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea[0].Trustee.ptstrName = (LPTSTR)pEveryoneSID;
+
+    // Create a new ACL that contains the new ACEs.
+    SetEntriesInAcl(1, ea, NULL, &pACL);
+
+    // Initialize a security descriptor.  
+    PSECURITY_DESCRIPTOR pSD = (PSECURITY_DESCRIPTOR)LocalAlloc(LPTR,
+        SECURITY_DESCRIPTOR_MIN_LENGTH);
+
+    InitializeSecurityDescriptor(pSD, SECURITY_DESCRIPTOR_REVISION);
+
+    // Add the ACL to the security descriptor. 
+    SetSecurityDescriptorDacl(pSD,
+        TRUE,     // bDaclPresent flag   
+        pACL,
+        FALSE);   // not a default DACL 
+
+
+                  //Change the security attributes
+    SetFileSecurity(FileName, DACL_SECURITY_INFORMATION, pSD);
+
+    if (pEveryoneSID)
+        FreeSid(pEveryoneSID);
+    if (pACL)
+        LocalFree(pACL);
+    if (pSD)
+        LocalFree(pSD);
+}
 
 std::wstring GetLastErrorMessage(DWORD* eNum)
 {
-    TCHAR sysMsg[256];
-    TCHAR* p;
+    *eNum = GetLastError();    
+    return GetErrorMessage(*eNum);
+}
 
-    *eNum = GetLastError();
-    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL, *eNum,
+std::wstring GetErrorMessage(DWORD eNum)
+{
+    TCHAR sysMsg[256] = { 0 };
+    TCHAR* p;
+    DWORD charNum = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, eNum,
         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
         sysMsg, 256, NULL);
 
@@ -22,7 +78,11 @@ std::wstring GetLastErrorMessage(DWORD* eNum)
     do { *p-- = 0; } while ((p >= sysMsg) &&
         ((*p == '.') || (*p < 33)));
 
-    std::wstring msg(sysMsg);
+
+    std::wstring msg;
+    if (charNum > 0) {
+        msg.append(sysMsg);
+    }
 
     return msg;
 }

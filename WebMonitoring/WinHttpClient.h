@@ -62,7 +62,7 @@ private:
     inline WinHttpClient(const WinHttpClient &other);
     inline WinHttpClient &operator =(const WinHttpClient &other);
     inline bool SetProgress(unsigned int byteCountReceived);
-
+    inline static void CALLBACK AsyncCallback(HINTERNET hInternet,DWORD_PTR dwContext,DWORD dwInternetStatus,LPVOID    lpvStatusInformation,DWORD     dwStatusInformationLength);
     HINTERNET m_sessionHandle;
     bool m_requireValidSsl;
     wstring m_requestURL;
@@ -91,6 +91,7 @@ private:
     unsigned int m_connectTimeout;
     unsigned int m_sendTimeout;
     unsigned int m_receiveTimeout;
+    DWORD secureProtocolsOptions;
 };
 
 WinHttpClient::WinHttpClient(const wstring &url, PROGRESSPROC progressProc)
@@ -120,7 +121,8 @@ WinHttpClient::WinHttpClient(const wstring &url, PROGRESSPROC progressProc)
       m_resolveTimeout(0),
       m_connectTimeout(60000),
       m_sendTimeout(30000),
-      m_receiveTimeout(30000)
+      m_receiveTimeout(30000),
+      secureProtocolsOptions(WINHTTP_FLAG_SECURE_PROTOCOL_ALL)
 {
 }
 
@@ -139,6 +141,61 @@ WinHttpClient::~WinHttpClient(void)
     {
         ::WinHttpCloseHandle(m_sessionHandle);
     }
+}
+
+void CALLBACK WinHttpClient::AsyncCallback(HINTERNET hInternet, DWORD_PTR dwContext, DWORD dwInternetStatus, LPVOID  lpvStatusInformation, DWORD   dwStatusInformationLength)
+{
+    std::string reason = "";
+    switch (dwInternetStatus)
+    {
+    case WINHTTP_CALLBACK_STATUS_SECURE_FAILURE:
+        DWORD status = *((DWORD*)(lpvStatusInformation));
+        if (status & WINHTTP_CALLBACK_STATUS_FLAG_CERT_REV_FAILED) 
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_CERT_REV_FAILED";
+        } else if (status &
+            WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CERT
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CERT";
+        }
+        else if (status &
+            WINHTTP_CALLBACK_STATUS_FLAG_CERT_REVOKED
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_CERT_REVOKED";
+        }
+        else if (status &
+            WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CA
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CA";
+        }
+        else if (status &
+            WINHTTP_CALLBACK_STATUS_FLAG_CERT_CN_INVALID
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_CERT_CN_INVALID";
+        }
+        else if (status &
+            WINHTTP_CALLBACK_STATUS_FLAG_CERT_DATE_INVALID
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_CERT_DATE_INVALID";
+        }
+        else if (status &
+
+            WINHTTP_CALLBACK_STATUS_FLAG_SECURITY_CHANNEL_ERROR
+
+            )
+        {
+            reason = "WINHTTP_CALLBACK_STATUS_FLAG_SECURITY_CHANNEL_ERROR";
+        }
+        
+
+        break;
+    }
+    printf("%s\r\n", reason.c_str());
 }
 
 bool WinHttpClient::SendHttpRequest(const wstring &httpVerb, bool disableAutoRedirect)
@@ -177,6 +234,10 @@ bool WinHttpClient::SendHttpRequest(const wstring &httpVerb, bool disableAutoRed
             m_dwLastError = ::GetLastError();
             return false;
         }
+
+        WINHTTP_STATUS_CALLBACK isCallback = WinHttpSetStatusCallback(m_sessionHandle,&WinHttpClient::AsyncCallback,WINHTTP_CALLBACK_FLAG_SECURE_FAILURE,NULL);
+
+        ::WinHttpSetOption(m_sessionHandle, WINHTTP_OPTION_SECURE_PROTOCOLS, &secureProtocolsOptions, sizeof(DWORD));
     }
 
     ::WinHttpSetTimeouts(m_sessionHandle,
@@ -214,17 +275,16 @@ bool WinHttpClient::SendHttpRequest(const wstring &httpVerb, bool disableAutoRed
                                             dwOpenRequestFlag);
             if (hRequest != NULL)
             {
+
                 // If HTTPS, then client is very susceptable to invalid certificates
                 // Easiest to accept anything for now
                 if (!m_requireValidSsl && urlComp.nScheme == INTERNET_SCHEME_HTTPS)
                 {
                     DWORD options = SECURITY_FLAG_IGNORE_CERT_CN_INVALID
                                     | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
-                                    | SECURITY_FLAG_IGNORE_UNKNOWN_CA;
-                    ::WinHttpSetOption(hRequest,
-                                       WINHTTP_OPTION_SECURITY_FLAGS,
-                                       (LPVOID)&options,
-                                       sizeof(DWORD));
+                                    | SECURITY_FLAG_IGNORE_UNKNOWN_CA                                
+                                    | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+                    ::WinHttpSetOption(hRequest,WINHTTP_OPTION_SECURITY_FLAGS,(LPVOID)&options,sizeof(DWORD));                    
                 }
 
                 bool bGetReponseSucceed = false;
@@ -300,6 +360,22 @@ bool WinHttpClient::SendHttpRequest(const wstring &httpVerb, bool disableAutoRed
                     }
                     else
                     {
+                        m_dwLastError = ::GetLastError();
+                        if (m_dwLastError == ERROR_WINHTTP_SECURE_FAILURE)
+                        {
+                            if (secureProtocolsOptions & WINHTTP_FLAG_SECURE_PROTOCOL_SSL3)
+                            {
+                                //we have SSL enabled, disable it
+                                secureProtocolsOptions = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_1 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+                                ::WinHttpSetOption(m_sessionHandle, WINHTTP_OPTION_SECURE_PROTOCOLS, (LPVOID)&secureProtocolsOptions, sizeof(DWORD));
+                            } 
+                            else if (secureProtocolsOptions & WINHTTP_FLAG_SECURE_PROTOCOL_TLS1)
+                            {
+                                //we have tls1 enabled, disable it
+                                secureProtocolsOptions = WINHTTP_FLAG_SECURE_PROTOCOL_SSL2 | WINHTTP_FLAG_SECURE_PROTOCOL_SSL3;
+                                ::WinHttpSetOption(m_sessionHandle, WINHTTP_OPTION_SECURE_PROTOCOLS, (LPVOID)&secureProtocolsOptions, sizeof(DWORD));
+                            }                            
+                        }
                         // Query the proxy information from IE setting and set the proxy if any.
                         WINHTTP_CURRENT_USER_IE_PROXY_CONFIG proxyConfig;
                         memset(&proxyConfig, 0, sizeof(proxyConfig));

@@ -33,6 +33,7 @@ public:
         BOOL fCanPauseContinue = FALSE);
     virtual ~CMonService();
     void ServiceWorkerThread(void);
+    void OpenDatabase();
 protected:
     virtual void OnStart(DWORD dwArgc, PWSTR *pszArgv);
     virtual void OnStop();

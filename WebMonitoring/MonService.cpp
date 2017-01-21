@@ -4,7 +4,11 @@
 #include "resource.h"
 #include "picojson.h"
 #include "utils.h"
+#pragma warning(push)
+#pragma warning(disable: 4267)
 #include "WinHttpClient.h"
+#pragma warning(pop)
+
 #include <ppltasks.h>
 #include <shlobj.h>    // for SHGetFolderPath
 
@@ -15,6 +19,7 @@ CMonService::CMonService(PWSTR pszServiceName,
 {
     m_fStopping = FALSE;
     indexHtmlString = GetHtmlResource(IDR_HTML1);    
+    chartJsString = GetHtmlResource(IDR_HTML2);
 }
 
 
@@ -114,8 +119,8 @@ site CMonService::AddSite(const std::string & name, const std::string & url) con
     }
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, "insert into URLS (NAME, URL) values (?1, ?2);", -1, &stmt, NULL);       
-    sqlite3_bind_text(stmt, 1, name.c_str(), name.length(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, s.url.c_str(), s.url.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name.c_str(), (int)name.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, s.url.c_str(), (int)s.url.length(), SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) 
     {
@@ -146,8 +151,8 @@ bool CMonService::UpdateSite(int id, const std::string & name, const std::string
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, "UPDATE URLS SET NAME=?1 , URL=?2 WHERE ID=?3;", -1, &stmt, NULL);
 
-    sqlite3_bind_text(stmt, 1, name.c_str(), name.length(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, url.c_str(), url.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name.c_str(), (int)name.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, url.c_str(), (int)url.length(), SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 3, id);
     site s;
     s.name = name;
@@ -289,8 +294,8 @@ void CMonService::AddHistoricalData(const response_data & resp)
 {    
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, "insert into HISTORY (NAME, URL,SITE_ID,DURATION,STATUS,REQUEST_TIME) values (?1, ?2,?3,?4,?5,strftime('%s','now'));", -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, resp.name.c_str(), resp.name.length(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, resp.url.c_str(), resp.url.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, resp.name.c_str(), (int)resp.name.length(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, resp.url.c_str(), (int)resp.url.length(), SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 3, resp.site_id);
     sqlite3_bind_int64(stmt, 4, resp.duration);
     sqlite3_bind_int(stmt, 5, resp.status);
@@ -320,11 +325,30 @@ response_data CMonService::GetLatestHistoricalData(int site_id)
     sqlite3_finalize(stmt);
     return response_data();
 }
-
+std::vector<response_data> CMonService::GetHistoricalData(int site_id)
+{
+    std::vector<response_data> historical_data;
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "SELECT NAME,URL,DURATION,STATUS,REQUEST_TIME FROM HISTORY WHERE SITE_ID=?1 AND REQUEST_TIME>=strftime('%s','now','-2 days') ORDER BY REQUEST_TIME DESC", -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, site_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        response_data s;
+        s.name = (const char*)sqlite3_column_text(stmt, 0);
+        s.url = (const char*)sqlite3_column_text(stmt, 1);
+        s.duration = sqlite3_column_int64(stmt, 2);
+        s.status = sqlite3_column_int(stmt, 3);
+        s.request_time = sqlite3_column_int64(stmt, 4);
+        s.site_id = site_id;
+        historical_data.push_back(s);
+    }
+    sqlite3_finalize(stmt);
+    return historical_data;
+}
 void CMonService::DeleteOldHistoricalData(int site_id)
 {
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, "DELETE FROM HISTORY WHERE SITE_ID=?1 AND REQUEST_TIME<strftime('now', '-14 days')", -1, &stmt, NULL);
+    sqlite3_prepare_v2(db, "DELETE FROM HISTORY WHERE SITE_ID=?1 AND REQUEST_TIME<strftime('%s','now', '-14 days')", -1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, site_id);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -368,6 +392,15 @@ void CMonService::ServiceWorkerThread(void)
         resp.code = 200;
         resp.set_header("Content-Type", "text/html;charset=utf8");
         resp.body = indexHtmlString;
+        return resp;
+    });
+    CROW_ROUTE(app, "/chart.js")
+        .methods("GET"_method)
+        ([this]() {
+        crow::response resp;
+        resp.code = 200;
+        resp.set_header("Content-Type", "application/javascript;charset=utf8");
+        resp.body = chartJsString;
         return resp;
     });
     CROW_ROUTE(app, "/sites")
@@ -475,6 +508,29 @@ void CMonService::ServiceWorkerThread(void)
             }
 
         }
+        return resp;
+    });
+
+    CROW_ROUTE(app, "/sites/<int>/history")
+        .methods("GET"_method)
+        ([this](int id) {
+        crow::response resp;
+        auto historical_data = GetHistoricalData(id);
+        picojson::array jarray;
+        for (const auto& d : historical_data)
+        {
+            picojson::object obj;
+            obj["site_id"] = picojson::value((int64_t)d.site_id);
+            obj["name"] = picojson::value(d.name);
+            obj["url"] = picojson::value(d.url);
+            obj["duration"] = picojson::value(d.duration);
+            obj["status"] = picojson::value((int64_t)d.status);
+            obj["request_time"] = picojson::value(d.request_time);
+            jarray.push_back(picojson::value(obj));
+        }
+        resp.code = 200;
+        resp.set_header("Content-Type", "application/json;charset=utf8");
+        resp.body = picojson::value(jarray).serialize();
         return resp;
     });
 

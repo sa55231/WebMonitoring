@@ -1,5 +1,12 @@
 #pragma once
+#pragma warning(push)
+#pragma warning(disable: 4267)
+#pragma warning(disable: 4244)
+#pragma warning(disable: 4800)
 #include "crow_all.h"
+#pragma warning(pop)
+
+
 #include "ServiceBase.h" 
 #include <string>
 #include <thread>
@@ -21,6 +28,7 @@ struct response_data {
     std::string name;
     std::string url;
     int64_t duration = -1;
+    int64_t request_time = -1;
     int status;    
     int site_id;
 };
@@ -48,6 +56,7 @@ private:
     void ScheduleSite(const site& s);
     void AddHistoricalData(const response_data& resp);
     response_data GetLatestHistoricalData(int site_id);
+    std::vector<response_data> GetHistoricalData(int site_id);
     void DeleteOldHistoricalData(int site_id);
 private:
     sqlite3 *db;    
@@ -59,6 +68,7 @@ private:
     std::condition_variable task_timeout_condition;
     crow::SimpleApp app;
     std::string indexHtmlString;
+    std::string chartJsString;
     std::thread thr;
     BOOL m_fStopping;
 };

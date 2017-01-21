@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Monitoring app</title>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
-
+    <script src="/chart.js"></script>
     <style>
         .container {
           display: -webkit-box;
@@ -92,6 +92,15 @@
             margin-top: 5px;
             margin-bottom: 5px;
         }
+        .chart{
+            height:300px;
+            width: 400px;
+            position:fixed !important; 
+            position:absolute; /*ie6*/
+            z-index:1000;
+            border: 1px solid black;
+            background-color:lightyellow;
+        }
     </style>
 </head>
 <body>
@@ -99,6 +108,10 @@
     </div>
     <script type="text/javascript">
         var allSites = [];
+        function log(msg)
+        {
+            if (window.console) console.log(msg);
+        }
             function getSites() {
                 $.get("/sites", function (data) {
                     var containerDiv = $(".container");
@@ -120,6 +133,7 @@
                         {
                             html += '<div class="small">Error:' + msg.error + '</div>';
                         }
+                        html += '<div class="small"><a href="javascript:showChart(' + msg.site_id + ');">Chart</a></div>';
                         updatedDiv.html(html);
                         if (msg.status >= 200 && msg.status < 400)
                         {                            
@@ -135,12 +149,120 @@
                                 updatedDiv.removeClass("highlight-fail");
                             }, 2000);
                         }
-                        console.log(JSON.stringify(msg));
+                        log(JSON.stringify(msg));
                     };
 
                 });
             }
 
+            function removeChart(siteId)
+            {
+                var existingChartDiv = $("#chart" + siteId);
+                if (existingChartDiv.length) {
+                    existingChartDiv.remove();                 
+                }
+            }
+
+            function showChart(siteId)
+            {
+                var containerDiv = $(".container");
+                var updatedDiv = $("#" + siteId);
+                var position = updatedDiv.offset();
+                var height = updatedDiv.outerHeight();
+
+                var existingChartDiv = $("#chart" + siteId);
+                if (existingChartDiv.length) {
+                    existingChartDiv.remove();
+                    return;
+                }
+
+                $.get("/sites/" + siteId + "/history", function (data) {
+                    if (data == null || data.length <= 0) return;
+
+                    var div = $('<div></div>').addClass('chart').html("<a href='javascript:removeChart(" + siteId + ")' style='position:absolute;top:0;right:0;'>&times;</a><canvas id='canvas_" + siteId + "' width=400 height=300></canvas>");
+                    div.attr('id', "chart" + siteId);
+                    div.attr('style', "left:"+position.left+"px;top:"+(position.top+height)+"px;");
+                    containerDiv.append(div);
+
+                    var chartData = {                        
+                        datasets: [
+                            {
+                                label: "Response time for "+data[0].name,
+                                fill: false,
+                                lineTension: 0.1,
+                                backgroundColor: "rgba(75,192,192,0.4)",
+                                borderColor: "rgba(75,192,192,1)",
+                                borderCapStyle: 'butt',
+                                borderDash: [],
+                                borderDashOffset: 0.0,
+                                borderJoinStyle: 'miter',
+                                pointBorderColor: "rgba(75,192,192,1)",
+                                pointBackgroundColor: "#fff",
+                                pointBorderWidth: 1,
+                                pointHoverRadius: 5,
+                                pointHoverBackgroundColor: "rgba(75,192,192,1)",
+                                pointHoverBorderColor: "rgba(220,220,220,1)",
+                                pointHoverBorderWidth: 2,
+                                pointRadius: 1,
+                                pointHitRadius: 10,
+                                data: [],
+                                spanGaps: false,
+                            },
+                            {
+                                label: "Response status for " + data[0].name,
+                                fill: false,
+                                lineTension: 0.1,
+                                backgroundColor: "rgba(54, 162, 235, 0.2)",
+                                borderColor: "rgba(54, 162, 235, 1)",
+                                borderCapStyle: 'butt',
+                                borderDash: [],
+                                borderDashOffset: 0.0,
+                                borderJoinStyle: 'miter',
+                                pointBorderColor: "rgba(54, 162, 235, 1)",
+                                pointBackgroundColor: "#fff",
+                                pointBorderWidth: 1,
+                                pointHoverRadius: 5,
+                                pointHoverBackgroundColor: "rgba(54, 162, 235, 1)",
+                                pointHoverBorderColor: "rgba(220,220,220,1)",
+                                pointHoverBorderWidth: 2,
+                                pointRadius: 1,
+                                pointHitRadius: 10,
+                                data: [],
+                                spanGaps: false,
+                            }
+                        ]
+                    };
+                    for (var i = 0; i < data.length; i++)
+                    {
+                        chartData.datasets[0].data.push({ x: new Date(data[i].request_time * 1000), y: data[i].duration });
+                        chartData.datasets[1].data.push({ x: new Date(data[i].request_time * 1000), y: data[i].status });
+                        //chartData.labels.push(data[i].request_time);
+                    }
+
+
+                    var ctx = $("#canvas_" + siteId);
+                    var myLineChart = new Chart(ctx, {
+                        type: 'line',
+                        data: chartData,
+                        options: {
+                            scales: {
+                                xAxes: [{                                    
+                                    type: 'time',
+                                    time: {
+                                        unit: 'day',
+                                        tooltipFormat: 'MM/DD/YY HH:mm:ss'
+                                    }
+                                }],
+                                yAxes: [{
+                                    stacked: false
+                                    
+                                }]
+                            }
+                        }
+                    });
+
+                });
+            }
 
             getSites();
     </script>

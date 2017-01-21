@@ -187,6 +187,7 @@
     <ResourceCompile Include="WebMonitoring.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Chart.bundle.min.js" />
     <None Include="html1.htm">
       <DeploymentContent>true</DeploymentContent>
     </None>

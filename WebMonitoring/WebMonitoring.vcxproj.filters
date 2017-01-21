@@ -91,5 +91,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="html1.htm" />
+    <None Include="Chart.bundle.min.js" />
   </ItemGroup>
 </Project>
